@@ -99,5 +99,11 @@ test-results/
 data/
 *.docx
 
+# ── Large media files ─────────────────────────────────────────────────────────
+*.mp4
+*.mov
+*.avi
+*.mkv
+
 # ── Claude Code session data ──────────────────────────────────────────────────
 .claude/

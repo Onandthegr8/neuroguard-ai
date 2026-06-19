@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neuroguard-config
+  namespace: neuroguard
+data:
+  # Service discovery (internal K8s DNS)
+  AUTH_SERVICE_URL: "http://auth-service:8001"
+  HEALTH_SERVICE_URL: "http://health-service:8003"
+  RISK_SERVICE_URL: "http://risk-service:8004"
+  ALERTS_SERVICE_URL: "http://alerts-service:8005"
+  REPORTS_SERVICE_URL: "http://reports-service:8006"
+  FEDERATED_SERVICE_URL: "http://federated-service:8007"
+
+  # Feature flags
+  FF_P1_KEYSTROKE_COLLECTION: "true"
+  FF_P1_SLEEP_SYNC: "true"
+  FF_P1_RISK_SCORING: "true"
+  FF_P2_FEDERATED_LEARNING: "true"
+  FF_P2_ALERTS: "true"
+  FF_P2_REPORTS: "true"
+  FF_P3_POPULATION_ANALYTICS: "false"
+  FF_P3_TREMOR_DETECTION: "false"
+
+  # Application settings
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"
+  ALLOWED_ORIGINS: "https://app.neuroguard.health,https://dashboard.neuroguard.health"
+  API_RATE_LIMIT: "100/minute"
+  AUTH_RATE_LIMIT: "5/15minute"
+  FL_UPDATE_RATE_LIMIT: "1/hour"
+
+  # Differential Privacy
+  FL_EPSILON_PER_ROUND: "0.5"
+  FL_TOTAL_EPSILON_BUDGET: "10.0"
+  FL_DELTA: "0.00001"
+  FL_MAX_GRAD_NORM: "1.0"
+  FL_NOISE_MULTIPLIER: "1.1"
+  FL_MIN_CLIENTS_PER_ROUND: "10"
+  FL_CLIENT_FRACTION: "0.2"
+  FL_MAX_ROUNDS: "200"
+  FL_SCHEDULE_UTC: "0 2 * * *"
+
+  # Risk tier thresholds
+  RISK_TIER_VERY_LOW_MAX: "0.15"
+  RISK_TIER_LOW_MAX: "0.30"
+  RISK_TIER_MODERATE_MAX: "0.55"
+  RISK_TIER_HIGH_MAX: "0.75"
+
+  # Alert thresholds
+  RISK_ALERT_THRESHOLD: "0.55"
+  RAPID_PROGRESSION_DELTA: "0.20"
+  REM_ANOMALY_RDI_THRESHOLD: "0.5"
+  KEYSTROKE_DEGRADATION_PCT: "0.15"
+
+  # JWT configuration
+  ACCESS_TOKEN_TTL: "900"
+  REFRESH_TOKEN_TTL: "2592000"
+
+  # AWS region
+  AWS_DEFAULT_REGION: "us-east-1"
+  S3_BUCKET_REPORTS: "neuroguard-reports-prod"
+  S3_BUCKET_MODELS: "neuroguard-models-prod"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neuroguard-web-config
+  namespace: neuroguard
+data:
+  NEXT_PUBLIC_API_URL: "https://api.neuroguard.health/api/v1"
+  NEXT_PUBLIC_APP_NAME: "NeuroGuard AI"
+  NEXT_PUBLIC_SENTRY_DSN: ""
+  NODE_ENV: "production"

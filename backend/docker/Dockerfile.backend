@@ -1,0 +1,25 @@
+FROM python:3.11-slim AS base
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev curl \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps (layer-cached separately from code)
+COPY requirements.txt .
+# Use CPU-only PyTorch wheels (~200MB instead of ~2GB CUDA build)
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
+# Copy source into /app/backend/ so "backend.*" imports resolve correctly
+COPY . ./backend/
+
+# Non-root user for security
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Default: overridden per-service in docker-compose
+CMD ["uvicorn", "backend.services.auth.main:app", "--host", "0.0.0.0", "--port", "8000"]

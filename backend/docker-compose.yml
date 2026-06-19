@@ -1,0 +1,243 @@
+version: '3.9'
+
+# ── NeuroGuard AI — Local Development Stack ──────────────────────────────────
+# Usage:
+#   docker compose up -d          # start everything
+#   docker compose logs -f auth   # tail a specific service
+#   docker compose down -v        # stop + remove volumes
+
+x-common-env: &common-env
+  DATABASE_URL:           postgresql+asyncpg://neuroguard:neuroguard@postgres:5432/neuroguard
+  REDIS_URL:              redis://redis:6379/0
+  # AUTH0_DOMAIN defaults to "dev.neuroguard.local" — triggers HS256 dev fallback in jwt.py
+  AUTH0_DOMAIN:           ${AUTH0_DOMAIN:-dev.neuroguard.local}
+  AUTH0_AUDIENCE:         https://api.neuroguard.health
+  FIELD_ENCRYPTION_KEY:   ${FIELD_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+  JWT_SECRET_KEY:         ${JWT_SECRET_KEY:-dev-jwt-secret-change-in-production}
+  AWS_REGION:             us-east-1
+  S3_BUCKET_MODELS:       neuroguard-models-dev
+  S3_BUCKET_REPORTS:      neuroguard-reports-dev
+  SENTRY_DSN:             ""
+  APP_ENV:                development
+  DEBUG:                  "true"
+  # Fitbit OAuth (leave blank in dev — connect flow will error gracefully)
+  FITBIT_CLIENT_ID:       ${FITBIT_CLIENT_ID:-}
+  FITBIT_CLIENT_SECRET:   ${FITBIT_CLIENT_SECRET:-}
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       neuroguard
+      POSTGRES_USER:     neuroguard
+      POSTGRES_PASSWORD: neuroguard
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neuroguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Migrations ──────────────────────────────────────────────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: sh -c "cd backend/migrations && alembic upgrade head"
+    environment: *common-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app/backend
+
+  # ── Backend Microservices ───────────────────────────────────────────────────
+  auth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.auth.main:app --host 0.0.0.0 --port 8001 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: auth
+    ports:
+      - "8001:8001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app/backend
+
+  user:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.user.main:app --host 0.0.0.0 --port 8002 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: user
+    ports:
+      - "8002:8002"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+
+  health:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.health.main:app --host 0.0.0.0 --port 8003 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: health
+    ports:
+      - "8003:8003"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+
+  risk:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.risk.main:app --host 0.0.0.0 --port 8004 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME:  risk
+      MODEL_PATH:    /app/ml/models/best_model.pt
+      MODEL_VERSION: v1.0.0
+      PYTHONPATH:    /app
+    ports:
+      - "8004:8004"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+      # Mount the ml/ package so risk service can `from ml.models...` import the model class
+      - ../ml:/app/ml:ro
+
+  alerts:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.alerts.main:app --host 0.0.0.0 --port 8005 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: alerts
+    ports:
+      - "8005:8005"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+
+  reports:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.reports.main:app --host 0.0.0.0 --port 8006 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: reports
+    ports:
+      - "8006:8006"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+
+  federated:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    command: uvicorn backend.services.federated.main:app --host 0.0.0.0 --port 8007 --reload
+    environment:
+      <<: *common-env
+      SERVICE_NAME: federated
+    ports:
+      - "8007:8007"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app/backend
+
+  # ── API Gateway (nginx reverse proxy) ──────────────────────────────────────
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      - auth
+      - user
+      - health
+      - risk
+      - alerts
+      - reports
+      - federated
+
+  # ── Web Dashboard ───────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      NEXTAUTH_URL:    http://localhost:3000
+      NEXTAUTH_SECRET: dev-secret-change-in-production
+      NEXTAUTH_API_URL: http://gateway/api/v1
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway
+
+volumes:
+  postgres_data:
+  redis_data:

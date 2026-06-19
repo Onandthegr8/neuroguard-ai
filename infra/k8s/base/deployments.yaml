@@ -1,0 +1,319 @@
+---
+# ── Auth Service ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: neuroguard
+  labels:
+    app: auth-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: auth-service
+          image: ghcr.io/neuroguard/auth-service:latest
+          command: ["uvicorn", "backend.services.auth.main:app", "--host", "0.0.0.0", "--port", "8001"]
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8001
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+# ── Health Service ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-service
+  namespace: neuroguard
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: health-service
+  template:
+    metadata:
+      labels:
+        app: health-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: health-service
+          image: ghcr.io/neuroguard/health-service:latest
+          command: ["uvicorn", "backend.services.health.main:app", "--host", "0.0.0.0", "--port", "8003"]
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8003
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+# ── Risk Service ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-service
+  namespace: neuroguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: risk-service
+  template:
+    metadata:
+      labels:
+        app: risk-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: risk-service
+          image: ghcr.io/neuroguard/risk-service:latest
+          command: ["uvicorn", "backend.services.risk.main:app", "--host", "0.0.0.0", "--port", "8004"]
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8004
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+# ── Alerts Service ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alerts-service
+  namespace: neuroguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: alerts-service
+  template:
+    metadata:
+      labels:
+        app: alerts-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: alerts-service
+          image: ghcr.io/neuroguard/alerts-service:latest
+          command: ["uvicorn", "backend.services.alerts.main:app", "--host", "0.0.0.0", "--port", "8005"]
+          ports:
+            - containerPort: 8005
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8005
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8005
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+# ── Reports Service ──────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reports-service
+  namespace: neuroguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reports-service
+  template:
+    metadata:
+      labels:
+        app: reports-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: reports-service
+          image: ghcr.io/neuroguard/reports-service:latest
+          command: ["uvicorn", "backend.services.reports.main:app", "--host", "0.0.0.0", "--port", "8006"]
+          ports:
+            - containerPort: 8006
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8006
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+# ── Federated Service ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: federated-service
+  namespace: neuroguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: federated-service
+  template:
+    metadata:
+      labels:
+        app: federated-service
+    spec:
+      serviceAccountName: neuroguard-app
+      containers:
+        - name: federated-service
+          image: ghcr.io/neuroguard/federated-service:latest
+          command: ["uvicorn", "backend.services.federated.main:app", "--host", "0.0.0.0", "--port", "8007"]
+          ports:
+            - containerPort: 8007
+          envFrom:
+            - secretRef:
+                name: neuroguard-secrets
+            - configMapRef:
+                name: neuroguard-config
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8007
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/ping
+              port: 8007
+            initialDelaySeconds: 40
+            periodSeconds: 30
+---
+# ── Web Dashboard ────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-dashboard
+  namespace: neuroguard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-dashboard
+  template:
+    metadata:
+      labels:
+        app: web-dashboard
+    spec:
+      containers:
+        - name: web-dashboard
+          image: ghcr.io/neuroguard/web-dashboard:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+          envFrom:
+            - secretRef:
+                name: neuroguard-web-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10

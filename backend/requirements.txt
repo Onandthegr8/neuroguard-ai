@@ -1,0 +1,33 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+sqlalchemy[asyncio]==2.0.30
+asyncpg==0.29.0
+alembic==1.13.1
+pydantic==2.7.3
+pydantic-settings==2.3.1
+redis[asyncio]==5.0.6
+httpx==0.27.0
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.3
+cryptography==42.0.8
+boto3==1.34.131
+reportlab==4.2.0
+slowapi==0.1.9
+sentry-sdk[fastapi]==2.5.1
+python-multipart==0.0.9
+APScheduler==3.10.4
+numpy==1.26.4
+# PyJWT — used by auth service for token issue (jose library used elsewhere for verify)
+PyJWT==2.8.0
+# Torch CPU build — risk service loads the trained NeuroGuard model for inference.
+# Pinned to a CPU wheel via the --extra-index-url flag in the Dockerfile.
+torch==2.5.1
+email-validator==2.1.1
+# Real SHAP explanations (falls back to gradient attribution if unavailable)
+shap==0.45.1
+# Federated learning
+flwr==1.8.0
+# Push notifications
+firebase-admin==6.4.0
+# PDF generation (already in requirements but pinning)
+matplotlib==3.9.0

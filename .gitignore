@@ -1,0 +1,103 @@
+# ── Environment & secrets ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.p8
+*.p12
+*.key
+secrets/
+**/*service-account*.json
+**/google-services.json
+**/GoogleService-Info.plist
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+*.egg
+
+# ── ML artifacts ───────────────────────────────────────────────────────────────
+ml/models/*.pt
+ml/models/*.pth
+ml/models/*.onnx
+ml/data/
+*.npz
+*.pkl
+mlruns/
+mlflow.db
+
+# ── Node.js / Next.js ──────────────────────────────────────────────────────────
+node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/coverage/
+*.tsbuildinfo
+.npm
+
+# ── Flutter / Dart ─────────────────────────────────────────────────────────────
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/.symlinks/
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/ios/Flutter/Generated.xcconfig
+mobile/coverage/
+
+# ── Terraform ──────────────────────────────────────────────────────────────────
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/*.tfvars
+infra/terraform/.terraform.lock.hcl
+infra/terraform/override.tf
+infra/terraform/override.tf.json
+
+# ── Docker ─────────────────────────────────────────────────────────────────────
+backend/postgres_data/
+backend/redis_data/
+
+# ── IDE ────────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ── Testing artifacts ─────────────────────────────────────────────────────────
+bandit-report.json
+coverage.xml
+test-results/
+
+# ── Personal / exported health data ──────────────────────────────────────────
+*MiFitness*/
+data/
+*.docx
+
+# ── Claude Code session data ──────────────────────────────────────────────────
+.claude/

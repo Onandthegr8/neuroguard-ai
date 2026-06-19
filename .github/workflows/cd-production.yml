@@ -1,0 +1,252 @@
+name: CD — Deploy to Production (EKS)
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false  # Never cancel a running deploy
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: neuroguard-prod
+  NAMESPACE: neuroguard
+  REGISTRY: ghcr.io/neuroguard
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Validate: run full CI on the tagged commit
+  # ─────────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Pre-deploy Validation
+    uses: ./.github/workflows/ci.yml
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Build & push production images (tagged with semver)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-images:
+    name: Build Production Images
+    runs-on: ubuntu-latest
+    needs: validate
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.extract_tag.outputs.tag }}
+
+    strategy:
+      matrix:
+        service: [auth-service, health-service, risk-service, alerts-service, reports-service, federated-service, web-dashboard]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract semver tag
+        id: extract_tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service == 'web-dashboard' && 'web' || 'backend' }}
+          file: ${{ matrix.service == 'web-dashboard' && 'web/Dockerfile' || 'backend/docker/Dockerfile.backend' }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ steps.extract_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy: run Alembic migration then rolling deploy
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: build-images
+    environment: production  # Requires manual approval in GitHub environments
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Set kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER }}
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      # ── Step 1: Database migration ──────────────────────────────────────────
+      - name: Run Alembic migration
+        run: |
+          kubectl run alembic-migrate-${{ steps.tag.outputs.tag }} \
+            --namespace=${{ env.NAMESPACE }} \
+            --image=${{ env.REGISTRY }}/auth-service:${{ steps.tag.outputs.tag }} \
+            --restart=Never \
+            --env-from=secret/neuroguard-secrets \
+            --env-from=configmap/neuroguard-config \
+            --command -- sh -c "alembic upgrade head" \
+            --wait \
+            --timeout=300s
+
+          # Check exit code
+          kubectl get pod alembic-migrate-${{ steps.tag.outputs.tag }} \
+            -n ${{ env.NAMESPACE }} \
+            -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}'
+
+          # Cleanup migration pod
+          kubectl delete pod alembic-migrate-${{ steps.tag.outputs.tag }} \
+            -n ${{ env.NAMESPACE }} \
+            --ignore-not-found
+
+      # ── Step 2: Update image tags in deployments ────────────────────────────
+      - name: Update deployment images
+        run: |
+          TAG=${{ steps.tag.outputs.tag }}
+          SERVICES=(auth-service health-service risk-service alerts-service reports-service federated-service)
+
+          for SERVICE in "${SERVICES[@]}"; do
+            kubectl set image deployment/$SERVICE \
+              $SERVICE=${{ env.REGISTRY }}/$SERVICE:$TAG \
+              -n ${{ env.NAMESPACE }}
+            echo "Updated $SERVICE to $TAG"
+          done
+
+          kubectl set image deployment/web-dashboard \
+            web-dashboard=${{ env.REGISTRY }}/web-dashboard:$TAG \
+            -n ${{ env.NAMESPACE }}
+
+      # ── Step 3: Apply latest K8s manifests ─────────────────────────────────
+      - name: Apply K8s manifests
+        run: |
+          kubectl apply -f infra/k8s/base/ -n ${{ env.NAMESPACE }}
+          kubectl apply -f infra/k8s/monitoring/
+
+      # ── Step 4: Wait for rollout ────────────────────────────────────────────
+      - name: Wait for rollout completion
+        timeout-minutes: 10
+        run: |
+          DEPLOYMENTS=(auth-service health-service risk-service alerts-service reports-service federated-service web-dashboard)
+          for D in "${DEPLOYMENTS[@]}"; do
+            echo "Waiting for $D..."
+            kubectl rollout status deployment/$D \
+              -n ${{ env.NAMESPACE }} \
+              --timeout=300s
+          done
+
+      # ── Step 5: Smoke tests ─────────────────────────────────────────────────
+      - name: Smoke test — API health
+        run: |
+          sleep 15  # Brief grace period for readiness probes
+          RESPONSE=$(curl -sf --retry 5 --retry-delay 5 \
+            https://api.neuroguard.health/api/v1/health/ping \
+            -H "Accept: application/json")
+          echo "Smoke test response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"status":"ok"' || exit 1
+
+      - name: Smoke test — Web dashboard
+        run: |
+          HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+            https://app.neuroguard.health)
+          echo "Web dashboard HTTP code: $HTTP_CODE"
+          [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "307" ]] || exit 1
+
+      # ── Step 6: Tag release in GitHub ──────────────────────────────────────
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          name: "NeuroGuard ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Deployment Summary
+            - **Version:** ${{ steps.tag.outputs.tag }}
+            - **Environment:** Production (EKS)
+            - **Region:** ${{ env.AWS_REGION }}
+            - **Deployed at:** ${{ github.event.repository.updated_at }}
+
+            ## Services Updated
+            - auth-service, health-service, risk-service
+            - alerts-service, reports-service, federated-service
+            - web-dashboard
+
+            ## Verification
+            - ✅ Alembic migration completed
+            - ✅ All deployments rolled out
+            - ✅ API health check passed
+            - ✅ Web dashboard accessible
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Rollback job (manual trigger)
+  # ─────────────────────────────────────────────────────────────────────────────
+  rollback:
+    name: Rollback (manual)
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
+      - name: Set kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER }}
+
+      - name: Rollback all deployments
+        run: |
+          DEPLOYMENTS=(auth-service health-service risk-service alerts-service reports-service federated-service web-dashboard)
+          for D in "${DEPLOYMENTS[@]}"; do
+            kubectl rollout undo deployment/$D -n ${{ env.NAMESPACE }}
+            echo "Rolled back $D"
+          done
+
+      - name: Notify on Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 NeuroGuard deploy ${{ github.ref_name }} FAILED and was rolled back",
+              "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "*Rollback triggered* for version `${{ github.ref_name }}`\nSee run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

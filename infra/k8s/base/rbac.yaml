@@ -1,0 +1,39 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: neuroguard-app
+  namespace: neuroguard
+  annotations:
+    # AWS IRSA — bind to IAM role for S3/KMS/SecretsManager access
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/neuroguard-app-role"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: neuroguard-app-role
+  namespace: neuroguard
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: neuroguard-app-binding
+  namespace: neuroguard
+subjects:
+  - kind: ServiceAccount
+    name: neuroguard-app
+    namespace: neuroguard
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: neuroguard-app-role

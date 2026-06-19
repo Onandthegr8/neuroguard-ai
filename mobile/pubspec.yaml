@@ -1,0 +1,82 @@
+name: neuroguard
+description: NeuroGuard AI — Early Parkinson's Detection Platform
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_bloc: ^8.1.5
+  equatable: ^2.0.5
+
+  # Networking
+  dio: ^5.4.3+1
+  retrofit: ^4.1.0
+
+  # Storage
+  flutter_secure_storage: ^9.0.0
+  sqflite: ^2.3.3
+  shared_preferences: ^2.2.3
+
+  # Auth
+  firebase_auth: ^4.19.5
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.0
+  local_auth: ^2.2.0
+
+  # Wearables / BLE
+  flutter_blue_plus: ^1.32.12
+  health: ^10.2.0         # Apple Health + Google Fit unified
+
+  # Notifications
+  firebase_messaging: ^14.9.4
+  flutter_local_notifications: ^17.2.1+2
+
+  # UI
+  cupertino_icons: ^1.0.6
+  fl_chart: ^0.67.0
+  flutter_svg: ^2.0.10+1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.2
+
+  # PDF
+  pdf: ^3.10.8
+  printing: ^5.13.1
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  crypto: ^3.0.3
+  permission_handler: ^11.3.1
+  connectivity_plus: ^6.0.3
+  package_info_plus: ^8.0.2
+  get_it: ^7.7.0           # DI container
+
+  # Firebase
+  firebase_core: ^2.30.1
+  firebase_crashlytics: ^3.4.19
+  firebase_analytics: ^10.10.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  build_runner: ^2.4.11
+  retrofit_generator: ^8.1.0
+  mockito: ^5.4.4
+  mocktail: ^1.0.4
+  bloc_test: ^9.1.7
+  flutter_lints: ^4.0.0
+  coverage: ^1.7.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/animations/
+    - assets/icons/
